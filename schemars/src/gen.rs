@@ -217,7 +217,7 @@ impl SchemaGenerator {
 
     fn subschema_for_inner(&mut self, ty: TypeInfo) -> Schema {
         if !ty.is_referenceable {
-            return self.json_schema_internal(ty);
+            return self.json_schema_internal(ty, None);
         }
 
         let id = (ty.schema_id)();
@@ -249,20 +249,20 @@ impl SchemaGenerator {
 
             let reference = format!("{}{}", self.settings.definitions_path, name);
             if !self.definitions.contains_key(&name) {
-                self.insert_new_subschema_for(name, ty);
+                self.insert_new_subschema_for(name, ty, id);
             }
             Schema::new_ref(reference)
         } else {
-            self.json_schema_internal(ty)
+            self.json_schema_internal(ty, Some(id))
         }
     }
 
-    fn insert_new_subschema_for(&mut self, name: String, ty: TypeInfo) {
+    fn insert_new_subschema_for(&mut self, name: String, ty: TypeInfo, id: Cow<'static, str>) {
         let dummy = Schema::Bool(false);
         // insert into definitions BEFORE calling json_schema to avoid infinite recursion
         self.definitions.insert(name.clone(), dummy);
 
-        let schema = self.json_schema_internal(ty);
+        let schema = self.json_schema_internal(ty, Some(id));
 
         self.definitions.insert(name, schema);
     }
@@ -345,7 +345,7 @@ impl SchemaGenerator {
     }
 
     fn root_schema_object_for(&mut self, ty: TypeInfo) -> SchemaObject {
-        let mut schema = self.json_schema_internal(ty).into_object();
+        let mut schema = self.json_schema_internal(ty, None).into_object();
         schema.metadata().title.get_or_insert_with(ty.schema_name);
         schema
     }
@@ -448,7 +448,8 @@ impl SchemaGenerator {
         }
     }
 
-    fn json_schema_internal(&mut self, ty: TypeInfo) -> Schema {
+    /// `id` is `T::schema_id()` if the caller has already computed it, so it is not computed twice.
+    fn json_schema_internal(&mut self, ty: TypeInfo, id: Option<Cow<'static, str>>) -> Schema {
         if !self.settings.inline_subschemas {
             // `pending_schema_ids` is only consulted when inlining subschemas.
             return (ty.json_schema)(self);
@@ -475,7 +476,7 @@ impl SchemaGenerator {
             }
         }
 
-        let pss = PendingSchemaState::new(self, (ty.schema_id)());
+        let pss = PendingSchemaState::new(self, id.unwrap_or_else(ty.schema_id));
         (ty.json_schema)(pss.generator)
     }
 }
